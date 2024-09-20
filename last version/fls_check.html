@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tarama Dosyası Analizi</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+        }
+        .result {
+            margin-top: 20px;
+        }
+        .list-group-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .list-group-item img {
+            max-width: 320px;
+            max-height: 320px;
+        }
+        #loading {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            display: none;
+        }
+        .btn-container {
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+        }
+        .btn-container button {
+            margin-left: 10px;
+        }
+        /* Duruma göre arka plan renkleri */
+        .status-1 {
+            background-color: #d4edda;
+        }
+        .status-2 {
+            background-color: #c3e6cb;
+        }
+        .status-3 {
+            background-color: #ffeeba;
+        }
+        .status-4 {
+            background-color: #f8d7da;
+        }
+        .status-5 {
+            background-color: #f5c6cb;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+    <div id="loading">Yükleniyor...</div>
+    <div class="container">
+        <h1>Tarama Dosyası Analizi</h1>
+        <div class="btn-container">
+            <input type="file" id="folderInput" webkitdirectory multiple>
+            <button id="generatePDF" class="btn btn-primary">PDF Oluştur</button>
+        </div>
+        <div class="result">
+            <ul class="list-group" id="resultList"></ul>
+        </div>
+    </div>
+    <script>
+        // Dosya adlarını dönüştürmek için yardımcı fonksiyon
+        function getPreviewFileName(scanFileName) {
+            return scanFileName;
+        }
+
+        function getPreviewFilerename(basePath, scanFileName) {
+            const previevn = "Preview";
+            const andek = ".grey";
+            const ek = '/';
+            return basePath + ek + previevn + ek + scanFileName + andek;
+        }
+
+        // Filtreleme fonksiyonu
+        function filterFolders(folderMap) {
+            const filteredMap = {};
+            for (let folderName in folderMap) {
+                const segment = folderName.split('-')[2]; // İkinci ve üçüncü tire arasındaki metin
+                if (!filteredMap[segment]) {
+                    filteredMap[segment] = {};
+                }
+                filteredMap[segment][folderName] = folderMap[folderName];
+            }
+            return filteredMap;
+        }
+
+        // Klasör içeriğini filtrele ve düzenle
+        function displayFilteredFolders(filteredMap) {
+            const resultList = document.getElementById('resultList');
+            resultList.innerHTML = '';
+
+            for (let segment in filteredMap) {
+                const segmentHeader = document.createElement('li');
+                segmentHeader.className = 'list-group-item active';
+                segmentHeader.textContent = segment;
+                segmentHeader.setAttribute('data-toggle', 'collapse');
+                segmentHeader.setAttribute('href', `#${segment}-collapse`);
+                segmentHeader.setAttribute('role', 'button');
+                segmentHeader.setAttribute('aria-expanded', 'false');
+                segmentHeader.setAttribute('aria-controls', `${segment}-collapse`);
+                resultList.appendChild(segmentHeader);
+
+                const collapseContainer = document.createElement('ul');
+                collapseContainer.className = 'list-group collapse';
+                collapseContainer.id = `${segment}-collapse`;
+                resultList.appendChild(collapseContainer);
+
+                for (let folderName in filteredMap[segment]) {
+                    const { scanFiles, previewFile, totalSize } = filteredMap[segment][folderName];
+
+                    let status = '5. Seviye';
+                    let seviye = 'Bozuk';
+
+                    if (scanFiles.length >= 22 && scanFiles.length <= 24) {
+                        if (totalSize >= 110000000 && totalSize <= 340000000) {
+                            if (scanFiles.length === 23) {
+                                status = '1. Seviye';
+                            } else if (scanFiles.length === 22) {
+                                status = '2. Seviye';
+                            } else if (scanFiles.length === 24) {
+                                status = '3. Seviye';
+                            }
+                        } else if (totalSize >= 85000000 && totalSize < 110000000) {
+                            if (scanFiles.length === 23 || scanFiles.length === 24) {
+                                status = '3. Seviye';
+                            } else if (scanFiles.length === 22) {
+                                status = '3. Seviye';
+                            } else if (scanFiles.length < 22) {
+                                status = '4. Seviye';
+                            }
+                        }
+                    } else if (scanFiles.length < 22) {
+                        if (totalSize >= 85000000 && totalSize < 110000000) {
+                            status = '4. Seviye';
+                        } else if (totalSize < 85000000) {
+                            status = '5. Seviye';
+                        }
+                    } else if (scanFiles.length < 21 && totalSize < 85000000) {
+                        status = '5. Seviye';
+                    }
+
+                    const listItem = document.createElement('li');
+                    listItem.className = `list-group-item status-${status}`;
+
+                    const itemText = document.createElement('div');
+                    itemText.innerHTML = `
+                        <strong>Tarama Noktası :</strong> ${folderName}<br>
+                        <strong>1 Klasörü içindeki Dosya Sayısı :</strong> ${scanFiles.length}<br>
+                        <strong>Toplam Boyut :</strong> ${(totalSize / (1024 * 1024)).toFixed(2)} MB<br>
+                        <strong>Durum :</strong> ${seviye}
+                    `;
+
+                    listItem.appendChild(itemText);
+
+                    if (previewFile) {
+                        const img = document.createElement('img');
+                        img.src = URL.createObjectURL(previewFile);
+                        listItem.appendChild(img);
+                    } else {
+                        const noImage = document.createElement('div');
+                        noImage.textContent = "Fotoğraf Bulunamadı";
+                        listItem.appendChild(noImage);
+                    }
+
+                    listItem.addEventListener('click', () => {
+                        alert(`Klasör: ${folderName}`);
+                    });
+
+                    collapseContainer.appendChild(listItem);
+                }
+            }
+        }
+
+        document.getElementById('folderInput').addEventListener('change', async function (event) {
+            const files = event.target.files;
+            const loading = document.getElementById('loading');
+            let folderMap = {};
+
+            let basePath = '';
+
+            loading.style.display = 'flex';
+
+            try {
+                for (let file of files) {
+                    const pathParts = file.webkitRelativePath.split('/');
+
+                    if (!basePath) basePath = pathParts[0];
+
+                    if (pathParts[1] === 'Scans' && file.name.endsWith('.fls')) {
+                        const scanFolderName = pathParts[2];
+
+                        if (!folderMap[scanFolderName]) {
+                            folderMap[scanFolderName] = { scanFiles: [], previewFile: null, totalSize: 0 };
+                        }
+
+                        folderMap[scanFolderName].scanFiles.push(file);
+                        folderMap[scanFolderName].totalSize += file.size;
+                    } else if (pathParts[1] === 'Preview') {
+                        const previewName = getPreviewFileName(pathParts[2]);
+                        if (file.name === previewName) {
+                            if (folderMap[pathParts[2]]) {
+                                folderMap[pathParts[2]].previewFile = file;
+                            }
+                        }
+                    }
+                }
+
+                const filteredMap = filterFolders(folderMap);
+                displayFilteredFolders(filteredMap);
+            } catch (error) {
+                console.error('Hata:', error);
+                alert('Bir hata oluştu. Lütfen konsolu kontrol edin.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+
+        document.getElementById('generatePDF').addEventListener('click', () => {
+            html2canvas(document.getElementById('resultList')).then(canvas => {
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+
+                const imgData = canvas.toDataURL('image/jpeg');
+                const imgWidth = 210; // A4 width in mm
+                const pageHeight = 295; // A4 height in mm
+                const imgHeight = canvas.height * imgWidth / canvas.width;
+                let heightLeft = imgHeight;
+
+                let position = 0;
+
+                pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+
+                pdf.save('dosya-analizi.pdf');
+            });
+        });
+    </script>
+</body>
+</html>
